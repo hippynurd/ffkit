@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+ffkit-logs/
+work/
+out/
+tests/src/
+tests/work/
+tests/out/
+*.egg-info/
+.venv/

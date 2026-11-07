@@ -1,0 +1,29 @@
+name: test-job
+workers: 2
+steps:
+  - op: probe
+    inputs: ["src/*.mp4", "src/*.mov"]
+
+  - op: each
+    inputs: ["src/a.mp4", "src/b.mp4"]
+    do:
+      op: timelapse
+      output: "work/{stem}_tl.mp4"
+      every: 30
+      fps: 30
+
+  - op: trim
+    input: src/a.mp4
+    output: work/a_cut.mp4
+    start: "0:02"
+    end: "0:08"
+
+  - op: concat
+    inputs: ["work/a_cut.mp4", "work/*_tl.mp4", "src/c_mismatch.mov"]
+    output: out/final.mp4
+    normalize: true
+
+  - op: merge
+    video: out/final.mp4
+    audio: src/music.m4a
+    output: out/final_music.mp4

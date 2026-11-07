@@ -1,0 +1,19 @@
+[project]
+name = "ffkit"
+version = "0.1.0"
+description = "Copy-first FFmpeg toolkit: probe, trim, concat, merge, remux, timelapse, and a job runner."
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+yaml = ["pyyaml>=6"]
+
+[project.scripts]
+ffkit = "ffkit.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["ffkit*"]
