@@ -71,3 +71,10 @@ The reference page (each method, why each flag is where it is, where it breaks, 
 wrong way) is `docs/index.html`.
 
 
+
+## Try it
+
+```
+tests/make_samples.sh          # generates sample clips with ffmpeg
+python -m ffkit run tests/job.yaml
+```
