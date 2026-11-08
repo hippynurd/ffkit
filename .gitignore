@@ -8,3 +8,6 @@ tests/work/
 tests/out/
 *.egg-info/
 .venv/
+tests/switch/cams/
+tests/switch/intro.mp4
+tests/switch/switch.offsets.json

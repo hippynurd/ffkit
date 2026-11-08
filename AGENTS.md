@@ -115,3 +115,24 @@ Re-encode, and say which of these is the reason:
 A summary that says, per step: copy or encode (and why), the command (or a pointer to
 the log), and the ffprobe line of the output. If any step encoded when it could have
 copied, that is not done.
+
+## Multi-camera shows: `ffkit switch`
+
+Choosing which camera to be on is the one decision an agent should NOT make: it
+can't hear a solo or see someone walk into frame, and every attempt to encode the
+rules swings between extremes. The person makes those calls live, with three keys,
+and the computer does the rest.
+
+```
+ffkit switch init        # switch.yaml: camera files, which one carries the audio, intro, output
+ffkit switch sync        # offsets from the audio (needs numpy); writes switch.offsets.json
+ffkit switch grid        # side-by-side proxy (one preview-quality encode)
+ffkit switch mark        # the human presses 1/2/3 in mpv; marks go to switch.log
+ffkit switch preview     # fast low-res render of what they just marked
+ffkit switch render      # frame-accurate final, dissolves, intro in front  (the one encode)
+```
+
+Your job is everything except `mark`: find the camera files, write `switch.yaml`,
+run `sync` and `grid`, make sure `mpv` is installed, free disk space, and print the
+one command the person runs next. Do not try to generate marks yourself unless asked.
+`switch.log` is theirs; never edit or delete it.

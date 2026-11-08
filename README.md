@@ -63,6 +63,26 @@ steps:
 
 Outputs that exist and verify are skipped on re-run. Paths are relative to the job file.
 
+## Multi-camera: `ffkit switch`
+
+A live switch over recorded footage. Three cameras side by side in one window, you press
+1, 2 or 3 as the show plays, the computer renders the cut.
+
+```
+ffkit switch init      # fill in switch.yaml: camera files, audio camera, intro, output
+ffkit switch sync      # line the cameras up from their audio (pip install numpy)
+ffkit switch grid      # build the side-by-side proxy you watch
+ffkit switch mark      # opens mpv: 1 2 3 = camera, u = undo, s/e = show start/end, q = quit
+ffkit switch preview   # 360p render of what you just marked, opens in mpv
+ffkit switch render    # final: frame-accurate cuts, 0.5s dissolves, intro in front
+```
+
+Quit any time; `mark` resumes 3 seconds before your last press. To redo a stretch,
+`ffkit switch mark --from 1:09:00` and press keys again; new marks replace old ones in
+that range. A camera that wasn't rolling when you pressed it falls back to the audio
+camera. HDR phone footage is tone-mapped. `tests/switch/make_samples.sh` builds three
+fake cameras to try it on.
+
 ## Why it's built this way
 
 See `AGENTS.md` for the rules, written for a coding agent but true for people too.

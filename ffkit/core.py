@@ -103,6 +103,8 @@ class VideoInfo:
     gop: int = 0            # median keyframe spacing in frames (0 = unknown)
     vfr: bool = False
     rotation: int = 0
+    color_transfer: str = ""
+    color_primaries: str = ""
     # audio
     acodec: str = ""
     sample_rate: int = 0
@@ -110,6 +112,11 @@ class VideoInfo:
     has_audio: bool = False
     has_video: bool = False
     notes: list[str] = field(default_factory=list)
+
+    @property
+    def is_hdr(self) -> bool:
+        """PQ or HLG transfer (iPhone HDR video, for instance) that needs tone mapping to SDR."""
+        return self.color_transfer in {"smpte2084", "arib-std-b67"}
 
     def signature(self) -> tuple:
         """What must match for a lossless concat."""
@@ -124,6 +131,8 @@ class VideoInfo:
             extra.append(f"gop={self.gop}")
         if self.vfr:
             extra.append("VFR")
+        if self.is_hdr:
+            extra.append("HDR")
         if self.rotation:
             extra.append(f"rot={self.rotation}")
         ex = (" [" + ", ".join(extra) + "]") if extra else ""
@@ -169,6 +178,8 @@ def probe(path: str | Path, *, gop: bool = True, max_gop_frames: int = 600) -> V
             r = _parse_rate(s.get("r_frame_rate", ""))
             info.time_base = s.get("time_base", "")
             info.nb_frames = int(s.get("nb_frames") or 0)
+            info.color_transfer = s.get("color_transfer", "") or ""
+            info.color_primaries = s.get("color_primaries", "") or ""
             # avg vs r frame rate disagreeing is the usual VFR tell
             if info.fps and r and abs(info.fps - r) / r > 0.02:
                 info.vfr = True
@@ -266,6 +277,7 @@ def video_encoder_args(kind: str = "h264", quality: str = "mezzanine") -> list[s
     Encoder flags for the one encode a pipeline is allowed.
       kind:    h264 | hevc | prores
       quality: mezzanine (edit-friendly, high bitrate) | delivery (small, compatible)
+               | preview (fast and small, for checking a cut, not for keeping)
     Prefers the hardware encoder when present; falls back to software.
     """
     c = capabilities()
@@ -275,19 +287,22 @@ def video_encoder_args(kind: str = "h264", quality: str = "mezzanine") -> list[s
         return ["-c:v", "prores_ks", "-profile:v", "2", "-pix_fmt", "yuv422p10le"]
     if kind == "hevc":
         if c["videotoolbox"]:
-            q = ["-q:v", "70"] if quality == "mezzanine" else ["-q:v", "55"]
-            return ["-c:v", "hevc_videotoolbox", "-tag:v", "hvc1", "-pix_fmt", "yuv420p"] + q
-        crf = "18" if quality == "mezzanine" else "26"
-        return ["-c:v", "libx265", "-preset", "medium", "-crf", crf, "-tag:v", "hvc1", "-pix_fmt", "yuv420p"]
-    # h264
+            q = {"mezzanine": "70", "delivery": "55", "preview": "35"}[quality]
+            return ["-c:v", "hevc_videotoolbox", "-tag:v", "hvc1", "-pix_fmt", "yuv420p", "-q:v", q]
+        crf = {"mezzanine": "18", "delivery": "26", "preview": "32"}[quality]
+        preset = "ultrafast" if quality == "preview" else "medium"
+        return ["-c:v", "libx265", "-preset", preset, "-crf", crf, "-tag:v", "hvc1", "-pix_fmt", "yuv420p"]
+    # h264 — always High profile so separately encoded pieces concat cleanly
     if c["videotoolbox"]:
-        q = ["-q:v", "75"] if quality == "mezzanine" else ["-q:v", "60"]
-        return ["-c:v", "h264_videotoolbox", "-pix_fmt", "yuv420p"] + q
+        q = {"mezzanine": "75", "delivery": "60", "preview": "40"}[quality]
+        return ["-c:v", "h264_videotoolbox", "-profile:v", "high", "-pix_fmt", "yuv420p", "-q:v", q]
     if c["nvenc"]:
-        cq = "19" if quality == "mezzanine" else "26"
-        return ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", cq, "-pix_fmt", "yuv420p"]
-    crf = "18" if quality == "mezzanine" else "23"
-    return ["-c:v", "libx264", "-preset", "medium", "-crf", crf, "-pix_fmt", "yuv420p"]
+        cq = {"mezzanine": "19", "delivery": "26", "preview": "32"}[quality]
+        preset = "p1" if quality == "preview" else "p5"
+        return ["-c:v", "h264_nvenc", "-profile:v", "high", "-preset", preset, "-rc", "vbr", "-cq", cq, "-pix_fmt", "yuv420p"]
+    crf = {"mezzanine": "18", "delivery": "23", "preview": "28"}[quality]
+    preset = {"mezzanine": "medium", "delivery": "medium", "preview": "ultrafast"}[quality]
+    return ["-c:v", "libx264", "-profile:v", "high", "-preset", preset, "-crf", crf, "-pix_fmt", "yuv420p"]
 
 
 def container_args(out: str | Path) -> list[str]:

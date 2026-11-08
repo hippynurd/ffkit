@@ -1,0 +1,10 @@
+cameras:
+  1: {file: cams/main.mp4,  name: main,  offset: 0}
+  2: {file: cams/front.mp4, name: front, offset: 0}
+  3: {file: cams/side.mp4,  name: side,  offset: 0}
+audio: 1
+fallback: 1
+intro: intro.mp4
+output: out/show.mp4
+transition: 0.5
+workers: 4

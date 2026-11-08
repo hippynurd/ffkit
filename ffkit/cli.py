@@ -6,6 +6,7 @@ import sys
 
 from .core import FFKitError, Runner, capabilities, to_json
 from . import ops, runner
+from . import switch as switch_mod
 
 
 def main(argv=None) -> int:
@@ -65,9 +66,12 @@ def main(argv=None) -> int:
     p.add_argument("--force", action="store_true", help="redo outputs that already exist")
 
     sub.add_parser("caps", help="show what this ffmpeg build can do (hw decode/encode)")
+    switch_mod.add_parser(sub)
 
     a = ap.parse_args(argv)
     try:
+        if a.cmd == "switch":
+            return switch_mod.main(a, a.dry_run, a.verbose)
         if a.cmd == "caps":
             print(__import__("json").dumps(capabilities(), indent=2))
             return 0
