@@ -408,6 +408,12 @@ def cmd_grid(cfg: Cfg, r: Runner, *, tile_w: int = 640, tile_h: int = 360) -> st
     out.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [FFMPEG, "-hide_banner", "-y", "-v", "error", "-stats"]
+    # On a machine without hardware decoding, 4K sources make the grid a multi-hour job.
+    # Skipping B-frames in the decoder roughly halves it; the proxy gets a little choppier
+    # but the audio (what you cut to) is untouched.
+    fast = not hwaccel_input_args() and any((c.info.height or 0) > 1080 for c in cams)
+    if fast:
+        r.say("no hardware decoder and >1080p sources: decoding without B-frames to keep this to hours, not days")
     filters = []
     for i, cam in enumerate(cams):
         if cam.offset >= 0:
@@ -415,6 +421,8 @@ def cmd_grid(cfg: Cfg, r: Runner, *, tile_w: int = 640, tile_h: int = 360) -> st
             pre = []
         else:
             pre = [f"tpad=start_duration={-cam.offset:.3f}:color=black"]
+        if fast:
+            cmd += ["-skip_frame", "bidir"]
         cmd += hwaccel_input_args() + ["-i", cam.file]
         chain = pre + _fit(tile_w, tile_h) + _tonemap_chain(cfg, cam.info) + [
             "format=yuv420p", f"fps={fps:g}",
@@ -460,10 +468,8 @@ def _mpv_hint() -> str:
     return "install mpv from https://mpv.io"
 
 
-def cmd_mark(cfg: Cfg, r: Runner, *, start_from: Optional[float] = None) -> None:
+def cmd_mark(cfg: Cfg, r: Runner, *, start_from: Optional[float] = None, web: bool = False) -> None:
     mpv = shutil.which("mpv")
-    if not mpv:
-        raise FFKitError("mpv is not installed. " + _mpv_hint())
     grid = cfg.work / "grid.mp4"
     if not grid.exists():
         raise FFKitError("no grid yet; run `ffkit switch grid` first")
@@ -480,6 +486,17 @@ def cmd_mark(cfg: Cfg, r: Runner, *, start_from: Optional[float] = None) -> None
     cfg.log.parent.mkdir(parents=True, exist_ok=True)
     with cfg.log.open("a") as fh:
         fh.write(f"# session {time.strftime('%Y-%m-%dT%H:%M:%S')} start={t0:.3f}\n")
+    if web or not mpv:
+        from . import switch_web
+        print(f"\n{why}.", file=sys.stderr)
+        if not mpv:
+            r.say("mpv not installed; marking in your browser instead")
+        if r.dry_run:
+            return
+        switch_web.serve(grid, cfg.log, {k: c.name for k, c in cfg.cams.items()}, t0,
+                         marks[-1][1] if marks else None, len(marks))
+        cmd_status(cfg, r)
+        return
     names = "|".join(f"{k}:{c.name}" for k, c in cfg.cams.items() if c.name)
     cmd = [mpv, f"--script={LUA}",
            f"--script-opts-append=switch-log={cfg.log}",
@@ -741,9 +758,13 @@ def cmd_preview(cfg: Cfg, r: Runner, *, start: Optional[float], end: Optional[fl
     out = cfg.work / "preview.mp4"
     render_range(cfg, r, a=a, b=b, profile="preview", out=out, with_intro=False)
     r.say(f"preview of {_fmt(a)} -> {_fmt(b)}: {out}")
-    mpv = shutil.which("mpv")
-    if play and mpv and not r.dry_run:
-        subprocess.call([mpv, "--really-quiet", "--title=ffkit preview", str(out)])
+    if play and not r.dry_run:
+        mpv = shutil.which("mpv")
+        if mpv:
+            subprocess.call([mpv, "--really-quiet", "--title=ffkit preview", str(out)])
+        else:
+            import webbrowser
+            webbrowser.open(out.resolve().as_uri())
     return str(out)
 
 
@@ -774,8 +795,9 @@ def add_parser(sub) -> None:
     q.add_argument("--max-lag", type=float, default=480.0, help="largest offset to look for, seconds")
     q.add_argument("--no-write", action="store_true")
     ss.add_parser("grid", help="build the side-by-side proxy")
-    q = ss.add_parser("mark", help="open the grid in mpv and press 1/2/3 as it plays")
+    q = ss.add_parser("mark", help="open the grid (mpv, or your browser) and press 1/2/3 as it plays")
     q.add_argument("--from", dest="start_from", help="start here instead of resuming (re-marks that stretch)")
+    q.add_argument("--web", action="store_true", help="mark in the browser even if mpv is installed")
     ss.add_parser("status", help="how much is marked, camera share, long holds")
     q = ss.add_parser("preview", help="fast low-res render of what you just marked (or a range)")
     q.add_argument("--from", dest="start")
@@ -786,18 +808,41 @@ def add_parser(sub) -> None:
     q.add_argument("--keep-segments", action="store_true")
 
 
+LAST = Path.home() / ".ffkit_switch_last"
+
+
+def _find_cfg(given: str) -> str:
+    """-f if given; else switch.yaml here or in a parent; else the one used last time."""
+    if given != "switch.yaml" or Path(given).exists():
+        return given
+    here = Path.cwd()
+    for d in [here] + list(here.parents):
+        if (d / "switch.yaml").exists():
+            return str(d / "switch.yaml")
+    if LAST.exists():
+        last = LAST.read_text().strip()
+        if last and Path(last).exists():
+            print(f"using {last}", file=sys.stderr)
+            return last
+    raise FFKitError("no switch.yaml here; run `ffkit switch init` or pass -f path/to/switch.yaml")
+
+
 def main(a, dry_run: bool, verbose: bool) -> int:
     if a.switch_cmd == "init":
         cmd_init(a.file)
         return 0
-    cfg = load_cfg(a.file)
+    cfg = load_cfg(_find_cfg(a.file))
+    try:
+        LAST.write_text(str(cfg.path))
+    except OSError:
+        pass
     r = Runner(dry_run=dry_run, verbose=verbose, job_name="switch-" + a.switch_cmd)
     if a.switch_cmd == "sync":
         cmd_sync(cfg, r, window=a.window, max_lag=a.max_lag, write=not a.no_write)
     elif a.switch_cmd == "grid":
         cmd_grid(cfg, r)
     elif a.switch_cmd == "mark":
-        cmd_mark(cfg, r, start_from=_parse_time(a.start_from))
+        cmd_mark(cfg, r, start_from=_parse_time(a.start_from), web=a.web)
     elif a.switch_cmd == "status":
         cmd_status(cfg, r)
     elif a.switch_cmd == "preview":
