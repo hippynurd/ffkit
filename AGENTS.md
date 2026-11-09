@@ -127,12 +127,18 @@ and the computer does the rest.
 ffkit switch init        # switch.yaml: camera files, which one carries the audio, intro, output
 ffkit switch sync        # offsets from the audio (needs numpy); writes switch.offsets.json
 ffkit switch grid        # side-by-side proxy (one preview-quality encode)
-ffkit switch mark        # the human presses 1/2/3 in mpv; marks go to switch.log
+ffkit switch mark        # the human presses a key per shot (browser, or mpv for plain cameras); marks go to switch.log
+                         # a key is a camera plus a framing they set up on the page (switch.shots.json), or a plain camera
+ffkit switch zoom        # second pass: the human touches up framing per camera (browser); changes go to zoom.log
 ffkit switch preview     # fast low-res render of what they just marked
-ffkit switch render      # frame-accurate final, dissolves, intro in front  (the one encode)
+ffkit switch render      # frame-accurate final, crossfades, intro + fade to black  (the one encode)
+ffkit switch render --from T --to T   # one stretch at full quality, no intro; its pieces are kept and reused later
 ```
 
-Your job is everything except `mark`: find the camera files, write `switch.yaml`,
-run `sync` and `grid`, make sure `mpv` is installed, free disk space, and print the
-one command the person runs next. Do not try to generate marks yourself unless asked.
-`switch.log` is theirs; never edit or delete it.
+Your job is everything except `mark` and `zoom`: find the camera files, write `switch.yaml`,
+run `sync` and `grid`, free disk space, and print the
+one command the person runs next. Do not try to generate marks, shots or zooms yourself unless asked.
+`switch.log`, `zoom.log` and `switch.shots.json` are theirs; never edit or delete them. Zoom is
+applied inside the same per-shot encode as the cut (a crop from the source's full resolution),
+never as an extra pass over the finished file. A shot's framing is resolved at render time from
+`switch.shots.json`, so changing a shot changes every cut that used it.

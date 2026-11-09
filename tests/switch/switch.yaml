@@ -6,5 +6,6 @@ audio: 1
 fallback: 1
 intro: intro.mp4
 output: out/show.mp4
-transition: 0.5
+transition: 0.75
+intro_fade: 1.0
 workers: 4
